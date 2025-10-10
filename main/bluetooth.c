@@ -605,7 +605,7 @@ void wifi_scan_callback_task(void *pvParameters) {
     vTaskDelete(NULL);
 }
 
-void get_wifi_credentials_from_app(const cJSON *ssid, const cJSON *password) {
+void get_wifi_credentials_from_app(const cJSON *ssid, const cJSON *password, const cJSON *device_id) {
     if (ssid && password && ssid->valuestring && password->valuestring) {
         // Free previous credentials if they exist
         if (wifi_credentials.ssid != NULL) {
@@ -616,23 +616,21 @@ void get_wifi_credentials_from_app(const cJSON *ssid, const cJSON *password) {
             free(wifi_credentials.password);
             wifi_credentials.password = NULL;
         }
-        if (wifi_credentials.endpoint != NULL) {
-            free(wifi_credentials.endpoint);
-            wifi_credentials.endpoint = NULL;
-        }
-        if (wifi_credentials.api_key != NULL) {
-            free(wifi_credentials.api_key);
-            wifi_credentials.api_key = NULL;
+        if (wifi_credentials.device_id != NULL) {
+            free(wifi_credentials.device_id);
+            wifi_credentials.device_id = NULL;
         }
 
 
         // Allocate and copy values into wifi_credentials structure
         wifi_credentials.ssid = malloc(strlen(ssid->valuestring) + 1);
         wifi_credentials.password = malloc(strlen(password->valuestring) + 1);
+        wifi_credentials.device_id = malloc(strlen(device_id->valuestring) + 1);
 
         if (wifi_credentials.ssid && wifi_credentials.password) {
             strcpy((char *)wifi_credentials.ssid, ssid->valuestring);
             strcpy((char *)wifi_credentials.password, password->valuestring);
+            strcpy((char *)wifi_credentials.device_id, device_id->valuestring);
             ESP_LOGI(TAG, "Received WiFi credentials - SSID: %s", wifi_credentials.ssid);
             
             wifi_creds_ready = true;
@@ -756,11 +754,13 @@ static void gatts_profile_event_handler(esp_gatts_cb_event_t event, esp_gatt_if_
                         ESP_LOGI(TAG, "WiFi Connection Request");
                         cJSON *ssid = cJSON_GetObjectItem(root, "ssid");
                         cJSON *password = cJSON_GetObjectItem(root, "password");
+                        cJSON *device_id = cJSON_GetObjectItem(root, "device_id");
 
                         if (ssid != NULL && password != NULL) {
                             printf("SSID: %s\n", ssid->valuestring);
                             printf("PASSWORD: %s\n", password->valuestring);
-                            get_wifi_credentials_from_app(ssid, password);
+                            printf("Device ID: %s\n", device_id->valuestring);
+                            get_wifi_credentials_from_app(ssid, password, device_id);
                             
                         } else {
                             printf("Missing SSID or PASSWORD in JSON\n");
@@ -773,8 +773,9 @@ static void gatts_profile_event_handler(esp_gatts_cb_event_t event, esp_gatt_if_
                     // Handle WiFi credentials if present (for backward compatibility)
                     cJSON *ssid = cJSON_GetObjectItem(root, "SSID");
                     cJSON *password = cJSON_GetObjectItem(root, "PASSWORD");
+                    cJSON *device_id = cJSON_GetObjectItem(root, "device_id");
                     if (ssid != NULL && password != NULL) {
-                        get_wifi_credentials_from_app(ssid, password);
+                        get_wifi_credentials_from_app(ssid, password, device_id);
                     }
                 }
 
@@ -867,9 +868,10 @@ static void gatts_profile_event_handler(esp_gatts_cb_event_t event, esp_gatt_if_
 
             cJSON *ssid = cJSON_GetObjectItem(root, "SSID");
             cJSON *password = cJSON_GetObjectItem(root, "PASSWORD");
+            cJSON *device_id = cJSON_GetObjectItem(root, "device_id");
 
             if (ssid && password) {
-                get_wifi_credentials_from_app(ssid, password);
+                get_wifi_credentials_from_app(ssid, password, device_id);
             }
             cJSON_Delete(root);
             example_exec_write_event_env(&prepare_write_env_b, param);
@@ -1165,13 +1167,9 @@ void connect_wifi_with_new_credentials_task(void) {
             free(wifi_credentials.password);
             wifi_credentials.password = NULL;
         }
-        if (wifi_credentials.endpoint) {
-            free(wifi_credentials.endpoint);
-            wifi_credentials.endpoint = NULL;
-        }
-        if (wifi_credentials.api_key) {
-            free(wifi_credentials.api_key);
-            wifi_credentials.api_key = NULL;
+        if(wifi_credentials.device_id) {
+            free(wifi_credentials.device_id);
+            wifi_credentials.device_id = NULL;
         }
     } else {
         ESP_LOGI(TAG, "Connection timeout for SSID:%s", wifi_credentials.ssid);

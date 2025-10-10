@@ -23,8 +23,7 @@
 typedef struct {
     uint8_t *ssid;
     uint8_t *password;
-    uint8_t *endpoint;
-    uint8_t *api_key;
+    uint8_t *device_id;
 } wifi_credentials_t;
 
 typedef struct {
@@ -48,7 +47,7 @@ extern wifi_credentials_t wifi_credentials;
 esp_err_t bluetooth_init(void);
 void bluetooth_start_advertising(void);
 void bluetooth_stop_advertising(void);
-void nvs_read_wifi_credentials(char *read_ssid, char *read_password, char *read_endpoint, char *read_api_key);
+void nvs_read_wifi_credentials(char *read_ssid, char *read_password, char *read_device_id);
 void store_wifi_credentials_to_nvs(void);
 void wifi_init_sta(void);
 void scan_wifi_networks(char* response);

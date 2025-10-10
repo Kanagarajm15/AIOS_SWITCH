@@ -6,6 +6,7 @@
 #include "cJSON.h"
 #include "driver/gpio.h"
 #include "led.h"
+#include "nvs.h"
 #include "switch_controller.h"
 
 static const char *TAG = "SWITCH_CTRL";
@@ -20,10 +21,12 @@ void process_command(const char* command)
 {
     if (strcmp(command, "ON") == 0) {
         // gpio_set_level(RELAY_PIN, 1);
+        // gpio_set_level(LED_PIN, 1);
         rgb_led_set_blue();
         ESP_LOGI(TAG, "Switch ON");
     } else if (strcmp(command, "OFF") == 0) {
         // gpio_set_level(RELAY_PIN, 0);
+        // gpio_set_level(LED_PIN, 0);
         rgb_led_set_orange();
         ESP_LOGI(TAG, "Switch OFF");
     } else if(strcmp(command, "AUTO") == 0){
@@ -58,6 +61,10 @@ void udp_receiver_task(void *pvParameters)
     char buffer[512];
     struct sockaddr_in source_addr;
     socklen_t socklen = sizeof(source_addr);
+    
+    //read device id from nvs
+    char device_id[32];
+    nvs_read_wifi_credentials(NULL,NULL,device_id);
 
     while (1) {
         int len = recvfrom(sock, buffer, sizeof(buffer) - 1, 0,
@@ -72,12 +79,19 @@ void udp_receiver_task(void *pvParameters)
                 cJSON *command = cJSON_GetObjectItem(json, "command");
                 cJSON *source = cJSON_GetObjectItem(json, "source");
                 cJSON *sensor_device_id = cJSON_GetObjectItem(json, "device_id");
+
+                ESP_LOGI(TAG, "sensor_device_id: %s", sensor_device_id->valuestring);
+                ESP_LOGI(TAG, "device_id: %s", device_id);
                 
                 if (cJSON_IsString(command) && command->valuestring != NULL) {
                     if (source && cJSON_IsString(source) && 
                         strcmp(source->valuestring, "AIOS_SENSOR") == 0) {
-                        ESP_LOGI(TAG, "Command from sensor: %s", command->valuestring);
-                        process_command(command->valuestring);
+                            if (sensor_device_id && cJSON_IsString(sensor_device_id) && 
+                                strcmp(sensor_device_id->valuestring, device_id) == 0) {
+                                ESP_LOGI(TAG, "Command from sensor: %s", command->valuestring);
+                                process_command(command->valuestring);
+                            }
+                        
                     }
                 }
                 cJSON_Delete(json);

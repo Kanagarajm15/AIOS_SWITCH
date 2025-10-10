@@ -34,7 +34,7 @@ static void event_handler(void* arg, esp_event_base_t event_base,
             esp_wifi_connect();
         } else {
             // Try to read from NVS as fallback
-            nvs_read_wifi_credentials(ssid, password, NULL, NULL);
+            nvs_read_wifi_credentials(ssid, password, NULL);
 
             if (strlen(ssid) > 0) {
                 esp_wifi_connect();
@@ -233,7 +233,7 @@ void wifi_init_sta(void)
     char ssid[100] = {0};
     char password[100] = {0};
     ESP_LOGI(TAG, "WiFi Credentials");
-    nvs_read_wifi_credentials(ssid,password, NULL, NULL);
+    nvs_read_wifi_credentials(ssid,password, NULL);
     ESP_LOGI(TAG, "*******SSID for wifi: %s", ssid);
     ESP_LOGI(TAG, "*******Password for wifi: %s", password);
 

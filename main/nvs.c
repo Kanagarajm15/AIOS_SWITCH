@@ -17,7 +17,7 @@ static const char *TAG = "nvs";
 
 // }
 
-void nvs_read_wifi_credentials(char *read_ssid, char *read_password, char *read_endpoint, char *read_api_key) {
+void nvs_read_wifi_credentials(char *read_ssid, char *read_password, char *read_device_id) {
     ESP_LOGI(TAG, "Reading WiFi credentials from NVS");
     nvs_handle_t nvs_handle;
     esp_err_t err;
@@ -33,7 +33,7 @@ void nvs_read_wifi_credentials(char *read_ssid, char *read_password, char *read_
         ESP_LOGE(TAG, "Failed to open NVS for reading: %s", esp_err_to_name(err));
         return;
     }
-    size_t ssid_len = 0, pass_len = 0, endpoint_len = 0, api_key_len = 0;
+    size_t ssid_len = 0, pass_len = 0, device_id_len = 0;
     // bool success = true;
 
     // Get lengths and validate existence of required fields
@@ -77,34 +77,47 @@ void nvs_read_wifi_credentials(char *read_ssid, char *read_password, char *read_
             }
         }
     }
+
+    if(read_device_id) {
+        err = nvs_get_str(nvs_handle, "device_id", NULL, &device_id_len);
+        if (err != ESP_OK) {
+            ESP_LOGW(TAG, "Device ID not found in NVS");
+            read_device_id[0] = '\0';  // Set empty string if not found
+        } else {
+            err = nvs_get_str(nvs_handle, "device_id", read_device_id, &device_id_len);
+            if (err == ESP_OK) {
+                ESP_LOGI(TAG, "Read Device ID from NVS: %s", read_device_id);
+            }
+        }
+    }
         
     // Read endpoint if provided
-    if (read_endpoint) {
-        err = nvs_get_str(nvs_handle, "endpoint", NULL, &endpoint_len);
-        if (err == ESP_OK) {
-            err = nvs_get_str(nvs_handle, "endpoint", read_endpoint, &endpoint_len);
-            if (err == ESP_OK) {
-                ESP_LOGI(TAG, "Read endpoint from NVS: %s", read_endpoint);
-            }
-        } else {
-            ESP_LOGW(TAG, "Endpoint not found in NVS");
-            read_endpoint[0] = '\0';  // Set empty string if not found
-        }
-    }
+    // if (read_endpoint) {
+    //     err = nvs_get_str(nvs_handle, "endpoint", NULL, &endpoint_len);
+    //     if (err == ESP_OK) {
+    //         err = nvs_get_str(nvs_handle, "endpoint", read_endpoint, &endpoint_len);
+    //         if (err == ESP_OK) {
+    //             ESP_LOGI(TAG, "Read endpoint from NVS: %s", read_endpoint);
+    //         }
+    //     } else {
+    //         ESP_LOGW(TAG, "Endpoint not found in NVS");
+    //         read_endpoint[0] = '\0';  // Set empty string if not found
+    //     }
+    // }
     
     // Read API key if provided
-    if (read_api_key) {
-        err = nvs_get_str(nvs_handle, "api_key", NULL, &api_key_len);
-        if (err == ESP_OK) {
-            err = nvs_get_str(nvs_handle, "api_key", read_api_key, &api_key_len);
-            if (err == ESP_OK) {
-                ESP_LOGI(TAG, "Read API key from NVS: %s", read_api_key);
-            }
-        } else {
-            ESP_LOGW(TAG, "API key not found in NVS");
-            read_api_key[0] = '\0';  // Set empty string if not found
-        }
-    }
+    // if (read_api_key) {
+    //     err = nvs_get_str(nvs_handle, "api_key", NULL, &api_key_len);
+    //     if (err == ESP_OK) {
+    //         err = nvs_get_str(nvs_handle, "api_key", read_api_key, &api_key_len);
+    //         if (err == ESP_OK) {
+    //             ESP_LOGI(TAG, "Read API key from NVS: %s", read_api_key);
+    //         }
+    //     } else {
+    //         ESP_LOGW(TAG, "API key not found in NVS");
+    //         read_api_key[0] = '\0';  // Set empty string if not found
+    //     }
+    // }
     // } else {
     //     // Clear all buffers if required credentials weren't found
     //     read_ssid[0] = '\0';
@@ -150,25 +163,32 @@ void store_wifi_credentials_to_nvs(void) {
         return;
     }
 
-    // Store endpoint
-    if (wifi_credentials.endpoint != NULL && strlen((char *)wifi_credentials.endpoint) > 0) {
-        err = nvs_set_str(nvs_handle, "endpoint", (const char *)wifi_credentials.endpoint);
-        if (err != ESP_OK) {
-            ESP_LOGE(TAG, "Failed to store endpoint to NVS: %s", esp_err_to_name(err));
-        } else {
-            ESP_LOGI(TAG, "Endpoint stored in NVS successfully: %s", wifi_credentials.endpoint);
-        }
+    err = nvs_set_str(nvs_handle, "device_id", (const char *)wifi_credentials.device_id);
+    if (err != ESP_OK) {
+        ESP_LOGE(TAG, "Failed to store device_id to NVS: %s", esp_err_to_name(err));
+        nvs_close(nvs_handle);
+        return;
     }
 
-    // Store API key
-    if (wifi_credentials.api_key != NULL && strlen((char *)wifi_credentials.api_key) > 0) {
-        err = nvs_set_str(nvs_handle, "api_key", (const char *)wifi_credentials.api_key);
-        if (err != ESP_OK) {
-            ESP_LOGE(TAG, "Failed to store API key to NVS: %s", esp_err_to_name(err));
-        } else {
-            ESP_LOGI(TAG, "API key stored in NVS successfully: %s", wifi_credentials.api_key);
-        }
-    }
+    // Store endpoint
+    // if (wifi_credentials.endpoint != NULL && strlen((char *)wifi_credentials.endpoint) > 0) {
+    //     err = nvs_set_str(nvs_handle, "endpoint", (const char *)wifi_credentials.endpoint);
+    //     if (err != ESP_OK) {
+    //         ESP_LOGE(TAG, "Failed to store endpoint to NVS: %s", esp_err_to_name(err));
+    //     } else {
+    //         ESP_LOGI(TAG, "Endpoint stored in NVS successfully: %s", wifi_credentials.endpoint);
+    //     }
+    // }
+
+    // // Store API key
+    // if (wifi_credentials.api_key != NULL && strlen((char *)wifi_credentials.api_key) > 0) {
+    //     err = nvs_set_str(nvs_handle, "api_key", (const char *)wifi_credentials.api_key);
+    //     if (err != ESP_OK) {
+    //         ESP_LOGE(TAG, "Failed to store API key to NVS: %s", esp_err_to_name(err));
+    //     } else {
+    //         ESP_LOGI(TAG, "API key stored in NVS successfully: %s", wifi_credentials.api_key);
+    //     }
+    // }
     
     // Commit changes
     err = nvs_commit(nvs_handle);
