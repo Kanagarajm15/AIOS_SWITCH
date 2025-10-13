@@ -11,27 +11,19 @@
 
 static const char *TAG = "SWITCH_CTRL";
 
-void switch_controller_init()
-{
-   //create task for udp receiver
-   xTaskCreate(udp_receiver_task, "udp_receiver_task", 4096, NULL, 5, NULL);
-}
-
 void process_command(const char* command)
 {
     if (strcmp(command, "ON") == 0) {
-        // gpio_set_level(RELAY_PIN, 1);
-        // gpio_set_level(LED_PIN, 1);
-        rgb_led_set_blue();
+        gpio_set_level(RELAY_PIN, 1);
+        gpio_set_level(LED_PIN, 1);
+        // rgb_led_set_blue();
         ESP_LOGI(TAG, "Switch ON");
     } else if (strcmp(command, "OFF") == 0) {
-        // gpio_set_level(RELAY_PIN, 0);
-        // gpio_set_level(LED_PIN, 0);
-        rgb_led_set_orange();
+        vTaskDelay(pdMS_TO_TICKS(5000));
+        gpio_set_level(RELAY_PIN, 0);
+        gpio_set_level(LED_PIN, 0);
+        // rgb_led_set_orange();
         ESP_LOGI(TAG, "Switch OFF");
-    } else if(strcmp(command, "AUTO") == 0){
-        rgb_led_set_purple();
-        ESP_LOGI(TAG, "Switch AUTO");
     }
 }
 
@@ -99,4 +91,10 @@ void udp_receiver_task(void *pvParameters)
         }
         vTaskDelay(pdMS_TO_TICKS(10));
     }
+}
+
+void switch_controller_init()
+{
+   //create task for udp receiver
+   xTaskCreate(udp_receiver_task, "udp_receiver_task", 4096, NULL, 5, NULL);
 }

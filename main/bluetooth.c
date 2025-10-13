@@ -631,7 +631,7 @@ void get_wifi_credentials_from_app(const cJSON *ssid, const cJSON *password, con
             strcpy((char *)wifi_credentials.ssid, ssid->valuestring);
             strcpy((char *)wifi_credentials.password, password->valuestring);
             strcpy((char *)wifi_credentials.device_id, device_id->valuestring);
-            ESP_LOGI(TAG, "Received WiFi credentials - SSID: %s", wifi_credentials.ssid);
+            ESP_LOGW(TAG, "Received WiFi credentials - SSID and device_id: %s <----> %s", wifi_credentials.ssid,wifi_credentials.device_id);
             
             wifi_creds_ready = true;
             // Connect to WiFi with new credentials
@@ -666,7 +666,7 @@ static void gatts_profile_event_handler(esp_gatts_cb_event_t event, esp_gatt_if_
             ESP_LOGI(TAG, "Client disconnected");
             is_authenticated = false; // Reset authentication on disconnect
             conn_id = 0;
-            // esp_ble_gap_start_advertising(&adv_params);
+            esp_ble_gap_start_advertising(&adv_params);
             break;
         case ESP_GATTS_WRITE_EVT:
         printf("\n ****************ESP_GATTS_WRITE_EVT*******************");
