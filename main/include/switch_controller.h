@@ -4,6 +4,7 @@
 #define UDP_PORT 9999
 #define RELAY_PIN GPIO_NUM_3
 #define LED_PIN GPIO_NUM_7
+#define SWITCH_PIN GPIO_NUM_5
 
 void switch_controller_init();
 void process_command(const char* command);

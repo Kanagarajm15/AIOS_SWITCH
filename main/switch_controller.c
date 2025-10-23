@@ -16,12 +16,14 @@ void process_command(const char* command)
     if (strcmp(command, "ON") == 0) {
         gpio_set_level(RELAY_PIN, 1);
         gpio_set_level(LED_PIN, 1);
+        gpio_set_level(SWITCH_PIN, 1);
         // rgb_led_set_blue();
         ESP_LOGI(TAG, "Switch ON");
     } else if (strcmp(command, "OFF") == 0) {
         vTaskDelay(pdMS_TO_TICKS(5000));
         gpio_set_level(RELAY_PIN, 0);
         gpio_set_level(LED_PIN, 0);
+        gpio_set_level(SWITCH_PIN, 0);
         // rgb_led_set_orange();
         ESP_LOGI(TAG, "Switch OFF");
     }
