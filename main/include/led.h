@@ -4,7 +4,7 @@
 #include "led_strip.h"
 
 
-// RGB LED pin definition for ESP32-S3 DevKit (GPIO 48 - RGB LED)
+// RGB LED pin definition for ESP32-C3 DevKit (GPIO 8 - RGB LED)
 #define RGB_LED_PIN    8
 
 static led_strip_handle_t led_strip;
