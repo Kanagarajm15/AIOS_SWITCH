@@ -7,7 +7,8 @@
 #define SWITCH_PIN GPIO_NUM_5
 
 void switch_controller_init();
-void process_command(const char* command);
+void process_command(const char* command, const char* origin);
 void udp_receiver_task(void *pvParameters);
+void set_switch_state(bool on);
 
 #endif
