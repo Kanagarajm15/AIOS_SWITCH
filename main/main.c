@@ -20,7 +20,7 @@ static const char *TAG = "SWITCH";
 void gpio_init(void)
 {
     gpio_config_t io_conf = {
-        .pin_bit_mask = (1ULL << RELAY_PIN) | (1ULL << LED_PIN) | (1ULL << SWITCH_PIN),
+        .pin_bit_mask = (1ULL << RELAY_PIN) | (1ULL << LED_PIN),
         .mode = GPIO_MODE_OUTPUT,
         .pull_up_en = 0,
         .pull_down_en = 0,
@@ -29,7 +29,6 @@ void gpio_init(void)
     gpio_config(&io_conf);
     gpio_set_level(RELAY_PIN, 0);
     gpio_set_level(LED_PIN, 0);
-    gpio_set_level(SWITCH_PIN, 0);
 }
 
 

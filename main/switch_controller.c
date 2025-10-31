@@ -2,12 +2,14 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "freertos/timers.h"
+#include "freertos/queue.h"
 #include "esp_log.h"
 #include "lwip/sockets.h"
 #include "cJSON.h"
 #include "driver/gpio.h"
 #include "led.h"
 #include "nvs.h"
+#include "main.h"
 #include "switch_controller.h"
 
 static const char *TAG = "SWITCH_CTRL";
@@ -22,20 +24,29 @@ static const char *TAG = "SWITCH_CTRL";
 static TimerHandle_t off_timer = NULL;
 static bool last_command_was_off = false;
 static uint32_t current_delay_ms = DEFAULT_DELAY_MS;
+static bool current_switch_state = false; // false = OFF, true = ON
+
+/* Button handling */
+static QueueHandle_t gpio_evt_queue = NULL;
+static const TickType_t DEBOUNCE_TICKS = pdMS_TO_TICKS(50);
 
 /* ---------------- Helper Functions ---------------- */
 void set_switch_state(bool on)
 {
     int level = on ? 1 : 0;
-    // printf("Setting switch state to %d and %d\n", level, on);
+    ESP_LOGI(TAG, "Setting physical RELAY/LED to %d", level);
+    // Set relay and status LED GPIOs
     gpio_set_level(RELAY_PIN, level);
     gpio_set_level(LED_PIN, level);
-    gpio_set_level(SWITCH_PIN, level);
-    // if(on) {
-    //     rgb_led_set_blue();
-    // } else {
-    //     rgb_led_set_orange();
-    // }
+
+    current_switch_state = on;
+
+    // Also update RGB LED if available
+    if (on) {
+        rgb_led_set_blue();
+    } else {
+        rgb_led_set_orange();
+    }
 
     ESP_LOGI(TAG, "Switch %s", on ? "ON" : "OFF");
 }
@@ -56,7 +67,6 @@ void process_command(const char *command, const char *origin)
     }
 
     if (strcmp(command, "ON") == 0) {
-        // Stop any pending OFF timer
         if (off_timer && xTimerIsTimerActive(off_timer)) {
             xTimerStop(off_timer, 0);
             ESP_LOGI(TAG, "OFF timer stopped");
@@ -64,9 +74,8 @@ void process_command(const char *command, const char *origin)
 
         set_switch_state(true);
         last_command_was_off = false;
-    } 
+    }
     else if (strcmp(command, "OFF") == 0) {
-        // Determine delay based on origin
         if (strcmp(origin, "TEMP") == 0) {
             current_delay_ms = TEMP_DELAY_MS;
         } else if (strcmp(origin, "MOTION") == 0) {
@@ -77,22 +86,55 @@ void process_command(const char *command, const char *origin)
 
         if (off_timer) {
             if (!last_command_was_off) {
-                // First OFF command
                 ESP_LOGI(TAG, "First OFF from %s - delay %lu ms", origin, current_delay_ms);
                 xTimerChangePeriod(off_timer, pdMS_TO_TICKS(current_delay_ms), 0);
                 xTimerStart(off_timer, 0);
                 last_command_was_off = true;
             } else {
-                // Subsequent OFF command - update delay
                 ESP_LOGI(TAG, "Subsequent OFF from %s - updating delay to %lu ms", origin, current_delay_ms);
                 xTimerChangePeriod(off_timer, pdMS_TO_TICKS(current_delay_ms), 0);
             }
         } else {
             ESP_LOGE(TAG, "OFF timer not initialized!");
         }
-    } 
+    }
     else {
         ESP_LOGW(TAG, "Unknown command: %s", command);
+    }
+}
+
+/* ---------------- Button ISR and task ---------------- */
+static void IRAM_ATTR gpio_isr_handler(void *arg)
+{
+    uint32_t gpio_num = (uint32_t)arg;
+    BaseType_t xHigherPriorityTaskWoken = pdFALSE;
+    if (gpio_evt_queue) {
+        xQueueSendFromISR(gpio_evt_queue, &gpio_num, &xHigherPriorityTaskWoken);
+    }
+    if (xHigherPriorityTaskWoken) {
+        portYIELD_FROM_ISR();
+    }
+}
+
+static void button_task(void *pvParameter)
+{
+    uint32_t io_num;
+    for (;;) {
+        if (xQueueReceive(gpio_evt_queue, &io_num, portMAX_DELAY)) {
+            // Debounce: wait briefly then confirm state
+            vTaskDelay(DEBOUNCE_TICKS);
+            int level = gpio_get_level((gpio_num_t)io_num);
+            // Button is active LOW: pressed -> level == 0
+            if (level == 0) {
+                // Toggle relay and LED
+                bool new_state = !current_switch_state;
+                set_switch_state(new_state);
+                ESP_LOGI(TAG, "Button press detected on GPIO %lu, toggled to %s", io_num, new_state ? "ON" : "OFF");
+            } else {
+                // Release or bounce - ignore
+                ESP_LOGW(TAG, "GPIO %lu event but level=%d (ignored)", io_num, level);
+            }
+        }
     }
 }
 
@@ -181,6 +223,29 @@ void udp_receiver_task(void *pvParameters)
 /* ---------------- Initialization ---------------- */
 void switch_controller_init(void)
 {
+    // Configure switch pin as input with pull-up and falling-edge interrupt
+    gpio_reset_pin(SWITCH_PIN);
+    gpio_set_direction(SWITCH_PIN, GPIO_MODE_INPUT);
+    gpio_set_pull_mode(SWITCH_PIN, GPIO_PULLUP_ONLY);
+    gpio_set_intr_type(SWITCH_PIN, GPIO_INTR_NEGEDGE);
+
+    // Create queue for gpio events
+    gpio_evt_queue = xQueueCreate(10, sizeof(uint32_t));
+    if (gpio_evt_queue == NULL) {
+        ESP_LOGE(TAG, "Failed to create gpio event queue");
+    }
+
+    // Install ISR service and add handler (install once globally is fine)
+    gpio_install_isr_service(0);
+    gpio_isr_handler_add(SWITCH_PIN, gpio_isr_handler, (void *)SWITCH_PIN);
+
+    // Create button task (lower priority so network/UDP processing isn't starved)
+    if (xTaskCreate(button_task, "button_task", 2048, NULL, 3, NULL) != pdPASS) {
+        ESP_LOGE(TAG, "Failed to create button task");
+    } else {
+        ESP_LOGI(TAG, "Button task started");
+    }
+
     // Create delayed OFF timer
     off_timer = xTimerCreate("off_timer", pdMS_TO_TICKS(DEFAULT_DELAY_MS),
                              pdFALSE, NULL, off_timer_callback);
@@ -191,10 +256,13 @@ void switch_controller_init(void)
         ESP_LOGI(TAG, "OFF timer created successfully");
     }
 
-    // Start UDP receiver task
-    if (xTaskCreate(udp_receiver_task, "udp_receiver_task", 4096, NULL, 5, NULL) != pdPASS) {
+    // Start UDP receiver task (give slightly higher priority than button task)
+    if (xTaskCreate(udp_receiver_task, "udp_receiver_task", 4096, NULL, 6, NULL) != pdPASS) {
         ESP_LOGE(TAG, "Failed to create UDP receiver task");
     } else {
         ESP_LOGI(TAG, "UDP receiver task started");
     }
+
+    // Initialize current_switch_state from physical relay pin
+    current_switch_state = (gpio_get_level(RELAY_PIN) != 0);
 }
