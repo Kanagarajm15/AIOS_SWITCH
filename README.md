@@ -50,13 +50,42 @@ WiFi credentials are configured via BLE interface. No hardcoded credentials need
 }
 ```
 
-## Build & Flash
+## 6. Build and Flash Commands
+
+### 6.1 Prerequisites
+
+- ESP-IDF v4.4 or later installed
+- ESP32-C3 development board or custom PCB
+- USB cable for programming
+
+### 6.2 Build Commands
+
 ```bash
+# Set target to ESP32-C3
+idf.py set-target esp32c3
+
+# Build the project
 idf.py build
+```
+
+### 6.3 Flash Commands
+
+```bash
+# Flash firmware to device
 idf.py flash
+
+# Monitor serial output only
 idf.py monitor
 
-# Or flash and monitor with specific COM port
-idf.py -p COMxx flash monitor
+# Flash and monitor serial output
+idf.py flash monitor -p COMxx
+
+```
+
+### 6.4 Erase Flash (if needed)
+
+```bash
+# Erase entire flash
+idf.py erase-flash
 ```
 
