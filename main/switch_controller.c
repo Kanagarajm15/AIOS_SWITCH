@@ -22,14 +22,32 @@ static const char *TAG = "SWITCH_CTRL";
 
 /* ---------------- Global Variables ---------------- */
 static TimerHandle_t off_timer = NULL;
-static bool last_command_was_off = false;
+
 static uint32_t current_delay_ms = DEFAULT_DELAY_MS;
 static bool current_switch_state = false; // false = OFF, true = ON
+static bool last_command_was_on = false; // Track last command to avoid duplicates
+
+int8_t g_temperature_threshold = 0; // Global temperature threshold
+char g_switch_mode[10] = "OFF"; // Default to Auto mode
+char g_device_id[32] = {0}; // Global device ID
 
 /* Button handling */
 static QueueHandle_t gpio_evt_queue = NULL;
 static const TickType_t DEBOUNCE_TICKS = pdMS_TO_TICKS(50);
 
+sensor_config_t g_sensor_config;
+
+/* ---------------- Updating Functions ---------------- */
+void update_temperature_threshold(int8_t new_threshold) {
+    g_temperature_threshold = new_threshold;
+    ESP_LOGI(TAG, "Temperature threshold updated to: %d", g_temperature_threshold);
+}
+
+void update_presence_switch_state(char *new_state){
+    strncpy(g_switch_mode, new_state, sizeof(g_switch_mode) - 1);
+    g_switch_mode[sizeof(g_switch_mode) - 1] = '\0';
+    ESP_LOGI(TAG, "Presence switch state updated to: %s", g_switch_mode);
+}
 /* ---------------- Helper Functions ---------------- */
 void set_switch_state(bool on)
 {
@@ -40,13 +58,11 @@ void set_switch_state(bool on)
     gpio_set_level(LED_PIN, level);
 
     current_switch_state = on;
-
-    // Also update RGB LED if available
-    if (on) {
-        rgb_led_set_blue();
-    } else {
-        rgb_led_set_orange();
-    }
+    // if(on){
+    //     rgb_led_set_blue();
+    // }else{
+    //     rgb_led_set_orange();
+    // }
 
     ESP_LOGI(TAG, "Switch %s", on ? "ON" : "OFF");
 }
@@ -58,49 +74,110 @@ static void off_timer_callback(TimerHandle_t xTimer)
     ESP_LOGI(TAG, "Switch OFF (delayed)");
 }
 
-/* ---------------- Command Processor ---------------- */
-void process_command(const char *command, const char *origin)
+/* ---------------- Sensor Data Processor ---------------- */
+void process_sensor_data(const char *sensor_json)
 {
-    if (!command || !origin) {
-        ESP_LOGW(TAG, "Invalid command or origin");
+    if (!sensor_json) {
+        ESP_LOGW(TAG, "Invalid sensor data");
         return;
     }
 
-    if (strcmp(command, "ON") == 0) {
-        if (off_timer && xTimerIsTimerActive(off_timer)) {
-            xTimerStop(off_timer, 0);
-            ESP_LOGI(TAG, "OFF timer stopped");
-        }
-
-        set_switch_state(true);
-        last_command_was_off = false;
+    cJSON *sensor_data = cJSON_Parse(sensor_json);
+    if (!sensor_data) {
+        ESP_LOGW(TAG, "Failed to parse sensor JSON");
+        return;
     }
-    else if (strcmp(command, "OFF") == 0) {
-        if (strcmp(origin, "TEMP") == 0) {
-            current_delay_ms = TEMP_DELAY_MS;
-        } else if (strcmp(origin, "MOTION") == 0) {
-            current_delay_ms = MOTION_DELAY_MS;
-        } else {
-            current_delay_ms = DEFAULT_DELAY_MS;
-        }
 
-        if (off_timer) {
-            if (!last_command_was_off) {
-                ESP_LOGI(TAG, "First OFF from %s - delay %lu ms", origin, current_delay_ms);
-                xTimerChangePeriod(off_timer, pdMS_TO_TICKS(current_delay_ms), 0);
-                xTimerStart(off_timer, 0);
-                last_command_was_off = true;
+    cJSON *presence = cJSON_GetObjectItem(sensor_data, "presence_detected");
+    cJSON *temperature = cJSON_GetObjectItem(sensor_data, "temperature");
+
+    bool presence_detected = presence && cJSON_IsBool(presence) ? cJSON_IsTrue(presence) : false;
+    float temp_value = temperature && cJSON_IsNumber(temperature) ? (float)cJSON_GetNumberValue(temperature) : 0.0;
+
+    ESP_LOGI(TAG, "Sensor data - Presence: %s, Temp: %.2f°C, Threshold: %d°C", 
+             presence_detected ? "YES" : "NO", temp_value, g_temperature_threshold);
+
+    // Determine switch action based on conditions
+    bool should_turn_on = false;
+    const char* trigger_reason = "NONE";
+    
+    if (g_temperature_threshold != 0) {
+        if (temp_value >= g_temperature_threshold) {
+            // Temperature exceeds threshold
+            ESP_LOGW(TAG, "Temperature %.2f°C exceeds threshold %d°C", temp_value, g_temperature_threshold);
+            if (strcmp(g_switch_mode, "ON") == 0) {
+                // Switch mode ON + temp exceeded -> use presence for decision
+                if (presence_detected) {
+                    should_turn_on = true;
+                    trigger_reason = "PRESENCE";
+                    current_delay_ms = MOTION_DELAY_MS;
+                } else {
+                    should_turn_on = false;
+                    trigger_reason = "PRESENCE"; // temp ON but above threshold + presence OFF -> OFF (reason: PRESENCE)
+                    current_delay_ms = MOTION_DELAY_MS;
+                }
             } else {
-                ESP_LOGI(TAG, "Subsequent OFF from %s - updating delay to %lu ms", origin, current_delay_ms);
-                xTimerChangePeriod(off_timer, pdMS_TO_TICKS(current_delay_ms), 0);
+                // Switch mode OFF + temp exceeded -> turn OFF
+                should_turn_on = false;
+                trigger_reason = "PRESENCE";
+                current_delay_ms = MOTION_DELAY_MS;
             }
         } else {
-            ESP_LOGE(TAG, "OFF timer not initialized!");
+            // Temperature below threshold -> turn OFF
+            should_turn_on = false;
+            trigger_reason = "TEMP"; // temp ON but below threshold -> OFF (reason: TEMP)
+            current_delay_ms = TEMP_DELAY_MS;
+        }
+    } else {
+        // No temperature threshold set - use switch mode
+        if (strcmp(g_switch_mode, "ON") == 0) {
+            if (presence_detected) {
+                should_turn_on = true;
+                trigger_reason = "PRESENCE";
+                current_delay_ms = MOTION_DELAY_MS;
+            } else {
+                should_turn_on = false;
+                trigger_reason = "PRESENCE";
+                current_delay_ms = MOTION_DELAY_MS;
+            }
+        } else {
+            // Switch mode OFF -> turn OFF
+            should_turn_on = false;
+            trigger_reason = "PRESENCE";
+            current_delay_ms = MOTION_DELAY_MS;
         }
     }
-    else {
-        ESP_LOGW(TAG, "Unknown command: %s", command);
+
+    // Execute command with deduplication
+    if (should_turn_on) {
+        // ON command - execute only if not already ON
+        if (!last_command_was_on) {
+            if (off_timer && xTimerIsTimerActive(off_timer)) {
+                xTimerStop(off_timer, 0);
+                ESP_LOGI(TAG, "OFF timer stopped");
+            }
+            set_switch_state(true);
+            last_command_was_on = true;
+            ESP_LOGI(TAG, "Switch ON triggered by %s", trigger_reason);
+        } else {
+            ESP_LOGD(TAG, "ON command ignored - already ON");
+        }
+    } else {
+        // OFF command - execute only if not already processing OFF
+        if (last_command_was_on) {
+            if (off_timer) {
+                ESP_LOGI(TAG, "Starting OFF timer - %s (delay: %lu ms)", trigger_reason, current_delay_ms);
+                xTimerStop(off_timer, 0);
+                xTimerChangePeriod(off_timer, pdMS_TO_TICKS(current_delay_ms), 0);
+                xTimerStart(off_timer, 0);
+                last_command_was_on = false;
+            }
+        } else {
+            ESP_LOGD(TAG, "OFF command ignored - already processing OFF");
+        }
     }
+    
+    cJSON_Delete(sensor_data);
 }
 
 /* ---------------- Button ISR and task ---------------- */
@@ -166,10 +243,7 @@ void udp_receiver_task(void *pvParameters)
     struct sockaddr_in source_addr;
     socklen_t socklen = sizeof(source_addr);
 
-    // Read device ID from NVS
-    char device_id[32] = {0};
-    nvs_read_wifi_credentials(NULL, NULL, device_id);
-    ESP_LOGI(TAG, "Local Device ID: %s", device_id);
+    ESP_LOGI(TAG, "Using Device ID: %s", g_device_id);
 
     while (1) {
         int len = recvfrom(sock, buffer, sizeof(buffer) - 1, 0,
@@ -183,23 +257,24 @@ void udp_receiver_task(void *pvParameters)
             if (json) {
                 cJSON *command = cJSON_GetObjectItem(json, "command");
                 cJSON *source  = cJSON_GetObjectItem(json, "source");
-                cJSON *origin  = cJSON_GetObjectItem(json, "origin");
+                // cJSON *origin  = cJSON_GetObjectItem(json, "origin");
                 cJSON *sensor_device_id = cJSON_GetObjectItem(json, "device_id");
 
                 if (command && cJSON_IsString(command) &&
                     source && cJSON_IsString(source) &&
-                    origin && cJSON_IsString(origin) &&
                     sensor_device_id && cJSON_IsString(sensor_device_id)) {
 
-                    ESP_LOGI(TAG, "Parsed JSON - command: %s, origin: %s, sensor_id: %s",
-                             command->valuestring, origin->valuestring, sensor_device_id->valuestring);
+                    ESP_LOGI(TAG, "Parsed JSON - command: %s, sensor_id: %s",
+                             command->valuestring, sensor_device_id->valuestring);
 
                     if (strcmp(source->valuestring, "AIOS_SENSOR") == 0 &&
-                        strcmp(sensor_device_id->valuestring, device_id) == 0) {
+                        strcmp(sensor_device_id->valuestring, g_device_id) == 0) {
 
-                        ESP_LOGI(TAG, "Valid command from matching sensor");
-                        process_command(command->valuestring, origin->valuestring);
+                        ESP_LOGI(TAG, "Valid sensor data from matching device");
+                        process_sensor_data(command->valuestring);
                     } else {
+                        //print log for source and deviceid
+                        ESP_LOGE(TAG, "source: %s, device_id: %s", source->valuestring, g_device_id);
                         ESP_LOGW(TAG, "Ignored packet (source/device mismatch)");
                     }
 
@@ -223,6 +298,12 @@ void udp_receiver_task(void *pvParameters)
 /* ---------------- Initialization ---------------- */
 void switch_controller_init(void)
 {
+    // Load settings from NVS directly into global variables
+    nvs_read_wifi_credentials(NULL, NULL, g_device_id, &g_temperature_threshold, g_switch_mode);
+    
+    ESP_LOGI(TAG, "Loaded settings from NVS - Device ID: %s, Temp Threshold: %d, Switch Mode: %s", 
+             g_device_id, g_temperature_threshold, g_switch_mode);
+    
     // Configure switch pin as input with pull-up and falling-edge interrupt
     gpio_reset_pin(SWITCH_PIN);
     gpio_set_direction(SWITCH_PIN, GPIO_MODE_INPUT);

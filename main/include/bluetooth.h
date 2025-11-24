@@ -47,7 +47,7 @@ extern wifi_credentials_t wifi_credentials;
 esp_err_t bluetooth_init(void);
 void bluetooth_start_advertising(void);
 void bluetooth_stop_advertising(void);
-void nvs_read_wifi_credentials(char *read_ssid, char *read_password, char *read_device_id);
+// void nvs_read_wifi_credentials(char *read_ssid, char *read_password, char *read_device_id, int8_t *temperature_value, char *read_presence_state);
 void store_wifi_credentials_to_nvs(void);
 void wifi_init_sta(void);
 void scan_wifi_networks(char* response);

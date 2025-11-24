@@ -24,6 +24,7 @@
 #include "esp_mac.h"
 #include "cJSON.h"
 #include "bluetooth.h"
+#include "switch_controller.h"
 
 #define WIFI_CONNECTED_BIT BIT0
 #define WIFI_FAIL_BIT      BIT1
@@ -693,6 +694,23 @@ static void gatts_profile_event_handler(esp_gatts_cb_event_t event, esp_gatt_if_
                             char device_id_json[100];
                             sprintf(device_id_json, "{\"device_id\":\"%s\",\"device_type\":\"AIOS_1\"}", DEVICE_ID);
                             ble_client_send(device_id_json);
+                        }else if (strcmp(cmd->valuestring, "set_temperature") == 0) {
+                            ESP_LOGI(TAG, "Temperature Request");
+                            cJSON *value = cJSON_GetObjectItem(root, "value");
+                            ESP_LOGE(TAG, "Temperature_value : %d", value->valueint);
+                            if((value->valueint >= 15 && value->valueint <= 45) || value->valueint == 0){
+                                g_sensor_config.temperature_value = value->valueint;
+                                store_wifi_credentials_to_nvs();
+                                update_temperature_threshold(value->valueint);
+                            }
+                        }else if (strcmp(cmd->valuestring, "presence_trigger") == 0) {
+                            ESP_LOGI(TAG, "Presence Trigger Request");
+                            cJSON *value = cJSON_GetObjectItem(root, "value");
+                            if (value != NULL && cJSON_IsString(value)) {
+                                strcpy(g_sensor_config.presence_state, value->valuestring);
+                                store_wifi_credentials_to_nvs();
+                                update_presence_switch_state(value->valuestring);
+                            }
                         }
                         cJSON_Delete(root);
                     }

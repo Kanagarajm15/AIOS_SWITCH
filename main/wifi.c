@@ -3,6 +3,7 @@
 #include "driver/gpio.h"
 #include <stdlib.h>
 #include "led.h"
+#include "nvs.h"
 
 // Define the TAG for logging
 static const char *TAG = "wifi_station";
@@ -34,7 +35,7 @@ static void event_handler(void* arg, esp_event_base_t event_base,
             esp_wifi_connect();
         } else {
             // Try to read from NVS as fallback
-            nvs_read_wifi_credentials(ssid, password, NULL);
+            nvs_read_wifi_credentials(ssid, password, NULL, NULL, NULL);
 
             if (strlen(ssid) > 0) {
                 esp_wifi_connect();
@@ -56,23 +57,23 @@ static void event_handler(void* arg, esp_event_base_t event_base,
                 ESP_LOGE(TAG, "WiFi authentication failed - check password");
                 xEventGroupSetBits(s_wifi_event_group, WIFI_FAIL_BIT);
                 s_retry_num = 5; // Force stop retrying for auth failures
-                rgb_led_set_red(); // Red LED for disconnected
+                // rgb_led_set_red(); // Red LED for disconnected
                 break;
             case WIFI_REASON_NO_AP_FOUND:
                 ESP_LOGE(TAG, "WiFi AP not found - check SSID or AP availability");
                 xEventGroupSetBits(s_wifi_event_group, WIFI_FAIL_BIT);
                 s_retry_num = 5; // Force stop retrying for AP not found
-                rgb_led_set_red(); // Red LED for disconnected
+                // rgb_led_set_red(); // Red LED for disconnected
                 break;
             case WIFI_REASON_BEACON_TIMEOUT:
                 ESP_LOGE(TAG, "WiFi beacon timeout - AP may be too far or congested");
                 xEventGroupSetBits(s_wifi_event_group, WIFI_FAIL_BIT);
                 s_retry_num = 5; // Force stop retrying for beacon timeout
-                rgb_led_set_red(); // Red LED for disconnected
+                // rgb_led_set_red(); // Red LED for disconnected
                 break;
             default:
                 ESP_LOGE(TAG, "WiFi disconnected with reason: %d", event->reason);
-                rgb_led_set_red(); // Red LED for disconnected
+                // rgb_led_set_red(); // Red LED for disconnected
                 break;
         }
         esp_wifi_connect();
@@ -81,7 +82,7 @@ static void event_handler(void* arg, esp_event_base_t event_base,
         ESP_LOGI(TAG, "Got IP address: " IPSTR, IP2STR(&event->ip_info.ip));
         s_retry_num = 0;
         xEventGroupSetBits(s_wifi_event_group, WIFI_CONNECTED_BIT);
-        rgb_led_set_green(); // Green LED for connected
+        // rgb_led_set_green(); // Green LED for connected
     }
 }
 
@@ -202,7 +203,7 @@ void wifi_init_sta(void)
     static bool is_initialized = false;
 
     s_wifi_event_group = xEventGroupCreate();    // Initialize RGB LED for WiFi status indication
-    rgb_led_set_red();  // Initially on (disconnected state)
+    // rgb_led_set_red();  // Initially on (disconnected state)
 
     if (!is_initialized) {
         ESP_ERROR_CHECK(esp_netif_init());
@@ -233,7 +234,7 @@ void wifi_init_sta(void)
     char ssid[100] = {0};
     char password[100] = {0};
     ESP_LOGI(TAG, "WiFi Credentials");
-    nvs_read_wifi_credentials(ssid,password, NULL);
+    nvs_read_wifi_credentials(ssid,password, NULL, NULL, NULL);
     ESP_LOGI(TAG, "*******SSID for wifi: %s", ssid);
     ESP_LOGI(TAG, "*******Password for wifi: %s", password);
 

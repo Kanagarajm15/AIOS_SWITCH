@@ -55,8 +55,8 @@ void app_main(void)
 
     nvs_init();
 
-    rgb_led_init();
-    rgb_led_set_red();
+    // rgb_led_init();
+    // rgb_led_set_red();
 
     gpio_init();
 
