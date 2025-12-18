@@ -89,13 +89,15 @@ void process_sensor_data(const char *sensor_json)
     }
 
     cJSON *presence = cJSON_GetObjectItem(sensor_data, "presence_detected");
+    cJSON *motion = cJSON_GetObjectItem(sensor_data, "motion_detected");
     cJSON *temperature = cJSON_GetObjectItem(sensor_data, "temperature");
 
     bool presence_detected = presence && cJSON_IsBool(presence) ? cJSON_IsTrue(presence) : false;
+    bool motion_detected = motion && cJSON_IsBool(motion) ? cJSON_IsTrue(motion) : false;
     float temp_value = temperature && cJSON_IsNumber(temperature) ? (float)cJSON_GetNumberValue(temperature) : 0.0;
 
     ESP_LOGI(TAG, "Sensor data - Presence: %s, Temp: %.2f°C, Threshold: %d°C", 
-             presence_detected ? "YES" : "NO", temp_value, g_temperature_threshold);
+             (motion_detected || presence_detected) ? "YES" : "NO", temp_value, g_temperature_threshold);
 
     // Determine switch action based on conditions
     bool should_turn_on = false;
@@ -107,7 +109,7 @@ void process_sensor_data(const char *sensor_json)
             ESP_LOGW(TAG, "Temperature %.2f°C exceeds threshold %d°C", temp_value, g_temperature_threshold);
             if (strcmp(g_switch_mode, "ON") == 0) {
                 // Switch mode ON + temp exceeded -> use presence for decision
-                if (presence_detected) {
+                if (presence_detected || motion_detected) {
                     should_turn_on = true;
                     trigger_reason = "PRESENCE";
                     current_delay_ms = MOTION_DELAY_MS;
@@ -131,7 +133,7 @@ void process_sensor_data(const char *sensor_json)
     } else {
         // No temperature threshold set - use switch mode
         if (strcmp(g_switch_mode, "ON") == 0) {
-            if (presence_detected) {
+            if (presence_detected || motion_detected) {
                 should_turn_on = true;
                 trigger_reason = "PRESENCE";
                 current_delay_ms = MOTION_DELAY_MS;
