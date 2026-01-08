@@ -9,7 +9,8 @@
 static const char *TAG = "nvs";
 
 
-void nvs_read_wifi_credentials(char *read_ssid, char *read_password, char *read_device_id, int8_t *temperature_value, char *read_presence_state) {
+void nvs_read_wifi_credentials(char *read_ssid, char *read_password, char *read_device_id, int8_t *temperature_value,
+                                char *read_presence_state, uint16_t *light_value) {
     ESP_LOGI(TAG, "Reading WiFi credentials from NVS");
     nvs_handle_t nvs_handle;
     esp_err_t err;
@@ -85,45 +86,15 @@ void nvs_read_wifi_credentials(char *read_ssid, char *read_password, char *read_
             *temperature_value = 0;  // Set default value if not found
         }
     }
-        
-    // Read endpoint if provided
-    // if (read_endpoint) {
-    //     err = nvs_get_str(nvs_handle, "endpoint", NULL, &endpoint_len);
-    //     if (err == ESP_OK) {
-    //         err = nvs_get_str(nvs_handle, "endpoint", read_endpoint, &endpoint_len);
-    //         if (err == ESP_OK) {
-    //             ESP_LOGI(TAG, "Read endpoint from NVS: %s", read_endpoint);
-    //         }
-    //     } else {
-    //         ESP_LOGW(TAG, "Endpoint not found in NVS");
-    //         read_endpoint[0] = '\0';  // Set empty string if not found
-    //     }
-    // }
-    
-    // Read API key if provided
-    // if (read_api_key) {
-    //     err = nvs_get_str(nvs_handle, "api_key", NULL, &api_key_len);
-    //     if (err == ESP_OK) {
-    //         err = nvs_get_str(nvs_handle, "api_key", read_api_key, &api_key_len);
-    //         if (err == ESP_OK) {
-    //             ESP_LOGI(TAG, "Read API key from NVS: %s", read_api_key);
-    //         }
-    //     } else {
-    //         ESP_LOGW(TAG, "API key not found in NVS");
-    //         read_api_key[0] = '\0';  // Set empty string if not found
-    //     }
-    // }
-    // } else {
-    //     // Clear all buffers if required credentials weren't found
-    //     read_ssid[0] = '\0';
-    //     read_password[0] = '\0';
-    //     if (read_endpoint) {
-    //         read_endpoint[0] = '\0';
-    //     }
-    //     if (read_api_key) {
-    //         read_api_key[0] = '\0';
-    //     }
-    // }
+    if(light_value != NULL) {
+        err = nvs_get_u16(nvs_handle, "light_val", light_value);
+        if (err == ESP_OK) {
+            ESP_LOGI(TAG, "Read light value from NVS: %d", *light_value);
+        } else {
+            ESP_LOGW(TAG, "Light value not found in NVS");
+            *light_value = 0;  // Set default value if not found
+        }
+    }
 
     nvs_close(nvs_handle);
 }
@@ -166,7 +137,7 @@ void store_wifi_credentials_to_nvs(void) {
         }
     }
     //store presence state
-    if (strlen(g_sensor_config.presence_state) > 0) {
+    if(strlen(g_sensor_config.presence_state) > 0) {
         err = nvs_set_str(nvs_handle, "pre_stat", (const char *)g_sensor_config.presence_state);
         if (err != ESP_OK) {
             ESP_LOGE(TAG, "Failed to store presence state to NVS: %s", esp_err_to_name(err));
@@ -175,7 +146,7 @@ void store_wifi_credentials_to_nvs(void) {
         }
     }
 
-    if ((g_sensor_config.temperature_value > 15 && g_sensor_config.temperature_value < 45) || g_sensor_config.temperature_value == 0) {
+    if((g_sensor_config.temperature_value > 15 && g_sensor_config.temperature_value < 45) || g_sensor_config.temperature_value == 0) {
         ESP_LOGI(TAG, "Temperature value: %d", g_sensor_config.temperature_value);
         err = nvs_set_i8(nvs_handle, "temp_val", g_sensor_config.temperature_value);
         if (err != ESP_OK){
@@ -184,6 +155,14 @@ void store_wifi_credentials_to_nvs(void) {
             ESP_LOGI(TAG, "Temperature value stored in NVS successfully: %d", g_sensor_config.temperature_value);
         }
         
+    }
+    if(g_sensor_config.light_value > 0) {
+        err = nvs_set_u16(nvs_handle, "light_val", g_sensor_config.light_value);
+        if (err != ESP_OK) {
+            ESP_LOGE(TAG, "Failed to store light value to NVS: %s", esp_err_to_name(err));
+        } else {
+            ESP_LOGI(TAG, "Light value stored in NVS successfully: %d", g_sensor_config.light_value);
+        }
     }
     
     // Commit changes

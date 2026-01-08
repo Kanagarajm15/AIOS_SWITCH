@@ -9,6 +9,7 @@
 typedef struct {
     char presence_state[10];     // "ON"/"OFF"
     int8_t temperature_value;
+    uint16_t light_value;        // Changed to uint16_t for 0-3000 range
 } sensor_config_t;
 
 extern sensor_config_t g_sensor_config;
@@ -19,5 +20,6 @@ void udp_receiver_task(void *pvParameters);
 void set_switch_state(bool on);
 void update_temperature_threshold(int8_t new_threshold);
 void update_presence_switch_state(char *new_state);
+void update_light_threshold(uint16_t new_threshold);
 
 #endif

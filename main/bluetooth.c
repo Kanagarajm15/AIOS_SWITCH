@@ -711,6 +711,22 @@ static void gatts_profile_event_handler(esp_gatts_cb_event_t event, esp_gatt_if_
                                 store_wifi_credentials_to_nvs();
                                 update_presence_switch_state(value->valuestring);
                             }
+                        }else if (strcmp(cmd->valuestring, "set_lux") == 0) {
+                            ESP_LOGI(TAG, "Light Trigger Request");
+                            cJSON *value = cJSON_GetObjectItem(root, "value");
+                            if (value != NULL && cJSON_IsNumber(value)) {
+                                int lux_val = value->valueint;
+                                if (lux_val >= 0 && lux_val <= 3500) {
+                                    g_sensor_config.light_value = (uint16_t)lux_val;
+                                    ESP_LOGE(TAG, "Light_value : %d", g_sensor_config.light_value);
+                                    store_wifi_credentials_to_nvs();
+                                    update_light_threshold((uint16_t)lux_val);
+                                } else {
+                                    ESP_LOGE(TAG, "Light value out of range: %d (0-3000)", lux_val);
+                                }
+                            }
+                        }else{
+                            //Nothing to do
                         }
                         cJSON_Delete(root);
                     }

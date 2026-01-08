@@ -16,7 +16,7 @@ static const char *TAG = "SWITCH_CTRL";
 
 /* ---------------- Configuration ---------------- */
 #define TEMP_DELAY_MS     60000   // 1 minute for TEMP origin
-#define MOTION_DELAY_MS   5000    // 5 seconds for MOTION origin
+#define MOTION_DELAY_MS   5000   // 5 secs minimum safe delay
 #define DEFAULT_DELAY_MS  6000    // Default delay
 #define UDP_BUFFER_SIZE   512
 
@@ -28,6 +28,7 @@ static bool current_switch_state = false; // false = OFF, true = ON
 static bool last_command_was_on = false; // Track last command to avoid duplicates
 
 int8_t g_temperature_threshold = 0; // Global temperature threshold
+uint16_t g_lux_threshold = 0; // Global light threshold (0-3000)
 char g_switch_mode[10] = "OFF"; // Default to Auto mode
 char g_device_id[32] = {0}; // Global device ID
 
@@ -47,6 +48,11 @@ void update_presence_switch_state(char *new_state){
     strncpy(g_switch_mode, new_state, sizeof(g_switch_mode) - 1);
     g_switch_mode[sizeof(g_switch_mode) - 1] = '\0';
     ESP_LOGI(TAG, "Presence switch state updated to: %s", g_switch_mode);
+}
+
+void update_light_threshold(uint16_t new_threshold){
+    g_lux_threshold = new_threshold;
+    ESP_LOGI(TAG, "Light threshold updated to: %d", g_lux_threshold);
 }
 /* ---------------- Helper Functions ---------------- */
 void set_switch_state(bool on)
@@ -91,10 +97,12 @@ void process_sensor_data(const char *sensor_json)
     cJSON *presence = cJSON_GetObjectItem(sensor_data, "presence_detected");
     cJSON *motion = cJSON_GetObjectItem(sensor_data, "motion_detected");
     cJSON *temperature = cJSON_GetObjectItem(sensor_data, "temperature");
+    cJSON *lux = cJSON_GetObjectItem(sensor_data, "lux");
 
     bool presence_detected = presence && cJSON_IsBool(presence) ? cJSON_IsTrue(presence) : false;
     bool motion_detected = motion && cJSON_IsBool(motion) ? cJSON_IsTrue(motion) : false;
     float temp_value = temperature && cJSON_IsNumber(temperature) ? (float)cJSON_GetNumberValue(temperature) : 0.0;
+    float lux_value = lux && cJSON_IsNumber(lux) ? (float)cJSON_GetNumberValue(lux) : 0.0;
 
     ESP_LOGI(TAG, "Sensor data - Presence: %s, Temp: %.2f°C, Threshold: %d°C", 
              (motion_detected || presence_detected) ? "YES" : "NO", temp_value, g_temperature_threshold);
@@ -147,6 +155,21 @@ void process_sensor_data(const char *sensor_json)
             should_turn_on = false;
             trigger_reason = "PRESENCE";
             current_delay_ms = MOTION_DELAY_MS;
+        }
+    }
+    if(g_lux_threshold >= 5){
+        if(strcmp(g_switch_mode, "ON") == 0){
+            if((presence_detected || motion_detected) && (lux_value <= g_lux_threshold)){
+                // Dark (lux ≤ threshold) + presence detected -> turn ON
+                should_turn_on = true;
+                trigger_reason = "LUX";
+            }
+            else{
+                // Bright (lux > threshold) OR no presence -> turn OFF
+                should_turn_on = false;
+                trigger_reason = "LUX";
+                current_delay_ms = MOTION_DELAY_MS;
+            }
         }
     }
 
@@ -301,7 +324,7 @@ void udp_receiver_task(void *pvParameters)
 void switch_controller_init(void)
 {
     // Load settings from NVS directly into global variables
-    nvs_read_wifi_credentials(NULL, NULL, g_device_id, &g_temperature_threshold, g_switch_mode);
+    nvs_read_wifi_credentials(NULL, NULL, g_device_id, &g_temperature_threshold, g_switch_mode, &g_lux_threshold);
     
     ESP_LOGI(TAG, "Loaded settings from NVS - Device ID: %s, Temp Threshold: %d, Switch Mode: %s", 
              g_device_id, g_temperature_threshold, g_switch_mode);
